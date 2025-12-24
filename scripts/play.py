@@ -187,16 +187,9 @@ with debug_recorder_ctx as debug_recorder:
                 n = len(buttons)
                 assert n == len(j_left) == len(j_right), "Mismatch in action lengths"
 
-                if args.log_actions and step_count % max(1, args.log_every) == 0:
-                    left_arr = np.array(j_left, dtype=np.float32)
-                    right_arr = np.array(j_right, dtype=np.float32)
-                    print(
-                        "Stick stats: "
-                        f"L(min={left_arr.min():.3f}, max={left_arr.max():.3f}, mean={left_arr.mean():.3f}) "
-                        f"R(min={right_arr.min():.3f}, max={right_arr.max():.3f}, mean={right_arr.mean():.3f})"
-                    )
-
                 env_actions = []
+                proc_left = []
+                proc_right = []
 
                 for i in range(n):
                     move_action = zero_action.copy()
@@ -205,6 +198,8 @@ with debug_recorder_ctx as debug_recorder:
                     xr, yr = j_right[i]
                     xl, yl = process_stick(xl, yl)
                     xr, yr = process_stick(xr, yr)
+                    proc_left.append((xl, yl))
+                    proc_right.append((xr, yr))
                     move_action["AXIS_LEFTX"] = xl
                     move_action["AXIS_LEFTY"] = yl
                     move_action["AXIS_RIGHTX"] = xr
@@ -222,6 +217,22 @@ with debug_recorder_ctx as debug_recorder:
 
 
                     env_actions.append(move_action)
+
+                if args.log_actions and step_count % max(1, args.log_every) == 0:
+                    left_arr = np.array(j_left, dtype=np.float32)
+                    right_arr = np.array(j_right, dtype=np.float32)
+                    proc_left_arr = np.array(proc_left, dtype=np.float32)
+                    proc_right_arr = np.array(proc_right, dtype=np.float32)
+                    print(
+                        "Stick stats raw: "
+                        f"L(min={left_arr.min():.3f}, max={left_arr.max():.3f}, mean={left_arr.mean():.3f}) "
+                        f"R(min={right_arr.min():.3f}, max={right_arr.max():.3f}, mean={right_arr.mean():.3f})"
+                    )
+                    print(
+                        "Stick stats scaled: "
+                        f"L(min={proc_left_arr.min():.3f}, max={proc_left_arr.max():.3f}, mean={proc_left_arr.mean():.3f}) "
+                        f"R(min={proc_right_arr.min():.3f}, max={proc_right_arr.max():.3f}, mean={proc_right_arr.mean():.3f})"
+                    )
 
                 print(f"Executing {len(env_actions)} actions, each action will be repeated {action_downsample_ratio} times")
 
