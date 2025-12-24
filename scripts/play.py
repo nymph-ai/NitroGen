@@ -24,6 +24,10 @@ parser.add_argument("--image-topic", type=str, default="/player/image_raw", help
 parser.add_argument("--joy-topic", type=str, default="/joy", help="ROS2 joy topic")
 parser.add_argument("--trigger-mode", type=str, default="0_1", help="Trigger axis mode: 0_1 or neg1_1")
 parser.add_argument("--debug-output", action="store_true", help="Write debug frames/videos/actions to disk")
+parser.add_argument("--stick-deadzone", type=float, default=0.15, help="Radial deadzone for sticks")
+parser.add_argument("--stick-expo", type=float, default=0.3, help="Expo curve for sticks")
+parser.add_argument("--log-actions", action="store_true", help="Log stick/button stats periodically")
+parser.add_argument("--log-every", type=int, default=60, help="Steps between action logs")
 
 args = parser.parse_args()
 
@@ -47,8 +51,8 @@ if DEBUG_OUTPUT:
     PATH_OUT.mkdir(parents=True, exist_ok=True)
 
 BUTTON_PRESS_THRES = 0.5
-STICK_DEADZONE = 0.15
-STICK_EXPO = 0.3
+STICK_DEADZONE = float(args.stick_deadzone)
+STICK_EXPO = float(args.stick_expo)
 
 # Find in path_out the list of existing video files, named 0001.mp4, 0002.mp4, etc.
 # If they exist, find the max number and set the next number to be max + 1
@@ -179,6 +183,14 @@ with debug_recorder_ctx as debug_recorder:
                 n = len(buttons)
                 assert n == len(j_left) == len(j_right), "Mismatch in action lengths"
 
+                if args.log_actions and step_count % max(1, args.log_every) == 0:
+                    left_arr = np.array(j_left, dtype=np.float32)
+                    right_arr = np.array(j_right, dtype=np.float32)
+                    print(
+                        "Stick stats: "
+                        f"L(min={left_arr.min():.3f}, max={left_arr.max():.3f}, mean={left_arr.mean():.3f}) "
+                        f"R(min={right_arr.min():.3f}, max={right_arr.max():.3f}, mean={right_arr.mean():.3f})"
+                    )
 
                 env_actions = []
 
