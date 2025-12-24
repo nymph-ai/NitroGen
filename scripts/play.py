@@ -26,7 +26,9 @@ parser.add_argument("--trigger-mode", type=str, default="0_1", help="Trigger axi
 parser.add_argument("--debug-output", action="store_true", help="Write debug frames/videos/actions to disk")
 parser.add_argument("--stick-deadzone", type=float, default=0.15, help="Radial deadzone for sticks")
 parser.add_argument("--stick-expo", type=float, default=0.3, help="Expo curve for sticks")
-parser.add_argument("--stick-scale", type=float, default=1.0, help="Scale factor applied after expo")
+parser.add_argument("--stick-scale", type=float, default=1.0, help="Scale factor applied after expo (legacy)")
+parser.add_argument("--left-stick-scale", type=float, default=None, help="Scale factor for left stick")
+parser.add_argument("--right-stick-scale", type=float, default=None, help="Scale factor for right stick")
 parser.add_argument("--log-actions", action="store_true", help="Log stick/button stats periodically")
 parser.add_argument("--log-every", type=int, default=60, help="Steps between action logs")
 
@@ -55,6 +57,12 @@ BUTTON_PRESS_THRES = 0.5
 STICK_DEADZONE = float(args.stick_deadzone)
 STICK_EXPO = float(args.stick_expo)
 STICK_SCALE = float(args.stick_scale)
+LEFT_STICK_SCALE = (
+    float(args.left_stick_scale) if args.left_stick_scale is not None else STICK_SCALE
+)
+RIGHT_STICK_SCALE = (
+    float(args.right_stick_scale) if args.right_stick_scale is not None else STICK_SCALE
+)
 
 # Find in path_out the list of existing video files, named 0001.mp4, 0002.mp4, etc.
 # If they exist, find the max number and set the next number to be max + 1
@@ -126,12 +134,12 @@ def apply_radial_deadzone(x, y, deadzone):
     scale = scaled / mag
     return x * scale, y * scale
 
-def process_stick(x, y):
+def process_stick(x, y, scale):
     x, y = apply_radial_deadzone(float(x), float(y), STICK_DEADZONE)
     x = apply_expo(x, STICK_EXPO)
     y = apply_expo(y, STICK_EXPO)
-    x *= STICK_SCALE
-    y *= STICK_SCALE
+    x *= scale
+    y *= scale
     return max(-1.0, min(1.0, x)), max(-1.0, min(1.0, y))
 
 TOKEN_SET = BUTTON_ACTION_TOKENS
@@ -196,8 +204,8 @@ with debug_recorder_ctx as debug_recorder:
 
                     xl, yl = j_left[i]
                     xr, yr = j_right[i]
-                    xl, yl = process_stick(xl, yl)
-                    xr, yr = process_stick(xr, yr)
+                    xl, yl = process_stick(xl, yl, LEFT_STICK_SCALE)
+                    xr, yr = process_stick(xr, yr, RIGHT_STICK_SCALE)
                     proc_left.append((xl, yl))
                     proc_right.append((xr, yr))
                     move_action["AXIS_LEFTX"] = xl
