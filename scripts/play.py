@@ -4,6 +4,7 @@ import time
 import json
 from pathlib import Path
 from collections import OrderedDict
+import math
 
 import cv2
 import numpy as np
@@ -16,9 +17,12 @@ from nitrogen.inference_client import ModelClient
 
 import argparse
 parser = argparse.ArgumentParser(description="VLM Inference")
-parser.add_argument("--process", type=str, default="celeste.exe", help="Game to play")
+parser.add_argument("--process", type=str, default="minecraft", help="Game label (unused for ROS2)")
 parser.add_argument("--allow-menu", action="store_true", help="Allow menu actions (Disabled by default)")
 parser.add_argument("--port", type=int, default=5555, help="Port for model server")
+parser.add_argument("--image-topic", type=str, default="/player/image_raw", help="ROS2 image topic")
+parser.add_argument("--joy-topic", type=str, default="/joy", help="ROS2 joy topic")
+parser.add_argument("--trigger-mode", type=str, default="0_1", help="Trigger axis mode: 0_1 or neg1_1")
 
 args = parser.parse_args()
 
@@ -37,6 +41,8 @@ PATH_OUT = (PATH_REPO / "out" / CKPT_NAME).resolve()
 PATH_OUT.mkdir(parents=True, exist_ok=True)
 
 BUTTON_PRESS_THRES = 0.5
+STICK_DEADZONE = 0.15
+STICK_EXPO = 0.3
 
 # Find in path_out the list of existing video files, named 0001.mp4, 0002.mp4, etc.
 # If they exist, find the max number and set the next number to be max + 1
@@ -58,30 +64,47 @@ def preprocess_img(main_image):
     return Image.fromarray(cv2.cvtColor(final_image, cv2.COLOR_BGR2RGB))
 
 zero_action = OrderedDict(
-        [ 
-            ("WEST", 0),
-            ("SOUTH", 0),
-            ("BACK", 0),
-            ("DPAD_DOWN", 0),
-            ("DPAD_LEFT", 0),
-            ("DPAD_RIGHT", 0),
-            ("DPAD_UP", 0),
-            ("GUIDE", 0),
-            ("AXIS_LEFTX", np.array([0], dtype=np.long)),
-            ("AXIS_LEFTY", np.array([0], dtype=np.long)),
-            ("LEFT_SHOULDER", 0),
-            ("LEFT_TRIGGER", np.array([0], dtype=np.long)),
-            ("AXIS_RIGHTX", np.array([0], dtype=np.long)),
-            ("AXIS_RIGHTY", np.array([0], dtype=np.long)),
-            ("LEFT_THUMB", 0),
-            ("RIGHT_THUMB", 0),
-            ("RIGHT_SHOULDER", 0),
-            ("RIGHT_TRIGGER", np.array([0], dtype=np.long)),
-            ("START", 0),
-            ("EAST", 0),
-            ("NORTH", 0),
-        ]
-    )
+    [
+        ("WEST", 0),
+        ("SOUTH", 0),
+        ("BACK", 0),
+        ("DPAD_DOWN", 0),
+        ("DPAD_LEFT", 0),
+        ("DPAD_RIGHT", 0),
+        ("DPAD_UP", 0),
+        ("GUIDE", 0),
+        ("AXIS_LEFTX", 0.0),
+        ("AXIS_LEFTY", 0.0),
+        ("LEFT_SHOULDER", 0),
+        ("LEFT_TRIGGER", 0.0),
+        ("AXIS_RIGHTX", 0.0),
+        ("AXIS_RIGHTY", 0.0),
+        ("LEFT_THUMB", 0),
+        ("RIGHT_THUMB", 0),
+        ("RIGHT_SHOULDER", 0),
+        ("RIGHT_TRIGGER", 0.0),
+        ("START", 0),
+        ("EAST", 0),
+        ("NORTH", 0),
+    ]
+)
+
+def apply_expo(value, expo):
+    return (1.0 - expo) * value + expo * (value ** 3)
+
+def apply_radial_deadzone(x, y, deadzone):
+    mag = math.hypot(x, y)
+    if mag <= deadzone:
+        return 0.0, 0.0
+    scaled = (mag - deadzone) / (1.0 - deadzone)
+    scale = scaled / mag
+    return x * scale, y * scale
+
+def process_stick(x, y):
+    x, y = apply_radial_deadzone(float(x), float(y), STICK_DEADZONE)
+    x = apply_expo(x, STICK_EXPO)
+    y = apply_expo(y, STICK_EXPO)
+    return max(-1.0, min(1.0, x)), max(-1.0, min(1.0, y))
 
 TOKEN_SET = BUTTON_ACTION_TOKENS
 
@@ -95,46 +118,10 @@ env = GamepadEnv(
     game_speed=1.0,
     env_fps=60,
     async_mode=True,
+    image_topic=args.image_topic,
+    joy_topic=args.joy_topic,
+    trigger_mode=args.trigger_mode,
 )
-
-# These games requires to open a menu to initialize the controller
-if args.process == "isaac-ng.exe":
-    print(f"GamepadEnv ready for {args.process} at {env.env_fps} FPS")
-    input("Press enter to create a virtual controller and start rollouts...")
-    for i in range(3):
-        print(f"{3 - i}...")
-        time.sleep(1)
-
-    def press(button):
-        env.gamepad_emulator.press_button(button)
-        env.gamepad_emulator.gamepad.update()
-        time.sleep(0.05)
-        env.gamepad_emulator.release_button(button)
-        env.gamepad_emulator.gamepad.update()
-
-    press("SOUTH")
-    for k in range(5):
-        press("EAST")
-        time.sleep(0.3)
-
-if args.process == "Cuphead.exe":
-    print(f"GamepadEnv ready for {args.process} at {env.env_fps} FPS")
-    input("Press enter to create a virtual controller and start rollouts...")
-    for i in range(3):
-        print(f"{3 - i}...")
-        time.sleep(1)
-
-    def press(button):
-        env.gamepad_emulator.press_button(button)
-        env.gamepad_emulator.gamepad.update()
-        time.sleep(0.05)
-        env.gamepad_emulator.release_button(button)
-        env.gamepad_emulator.gamepad.update()
-
-    press("SOUTH")
-    for k in range(5):
-        press("EAST")
-        time.sleep(0.3)
 
 env.reset()
 env.pause()
@@ -168,10 +155,12 @@ with VideoRecorder(str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium") as debu
 
                     xl, yl = j_left[i]
                     xr, yr = j_right[i]
-                    move_action["AXIS_LEFTX"] = np.array([int(xl * 32767)], dtype=np.long)
-                    move_action["AXIS_LEFTY"] = np.array([int(yl * 32767)], dtype=np.long)
-                    move_action["AXIS_RIGHTX"] = np.array([int(xr * 32767)], dtype=np.long)
-                    move_action["AXIS_RIGHTY"] = np.array([int(yr * 32767)], dtype=np.long)
+                    xl, yl = process_stick(xl, yl)
+                    xr, yr = process_stick(xr, yr)
+                    move_action["AXIS_LEFTX"] = xl
+                    move_action["AXIS_LEFTY"] = yl
+                    move_action["AXIS_RIGHTX"] = xr
+                    move_action["AXIS_RIGHTY"] = yr
                     
                     button_vector = buttons[i]
                     assert len(button_vector) == len(TOKEN_SET), "Button vector length does not match token set length"
@@ -179,7 +168,7 @@ with VideoRecorder(str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium") as debu
                     
                     for name, value in zip(TOKEN_SET, button_vector):
                         if "TRIGGER" in name:
-                            move_action[name] =  np.array([value * 255], dtype=np.long)
+                            move_action[name] = float(value)
                         else:
                             move_action[name] = 1 if value > BUTTON_PRESS_THRES else 0
 

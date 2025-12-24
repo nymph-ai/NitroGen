@@ -1,5 +1,6 @@
 import time
 import json
+import os
 from collections import deque
 
 import torch
@@ -76,7 +77,11 @@ def load_model(checkpoint_path: str):
     model.load_state_dict(checkpoint["model"])
     model.eval()
     tokenizer.eval()
-    model.to("cuda")
+    device = os.environ.get("NITROGEN_DEVICE")
+    if not device:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using NitroGen device: {device}")
+    model.to(device)
 
     return model, tokenizer, img_proc, ckpt_config, game_mapping, action_downsample_ratio
 
@@ -125,21 +130,19 @@ class InferenceSession:
         model, tokenizer, img_proc, ckpt_config, game_mapping, action_downsample_ratio = load_model(checkpoint_path)
 
         if game_mapping is not None:
-            # Ask user to pick a game from the list
-            print("Available games in tokenizer mapping:")
-            for game, idx in game_mapping.items():
-                print(f"{idx:03d}: {game}")
-            selected_game = input("Enter the game ID to use (leave empty for unconditional): ")
-            if selected_game == "":
-                selected_game = None
+            selected_game = None
+            selected_env = os.environ.get("NITROGEN_GAME_ID")
+            if not selected_env:
+                print("No NITROGEN_GAME_ID set; proceeding without game conditioning")
             else:
-                selected_idx = int(selected_game)
+                selected_idx = int(selected_env)
                 assert selected_idx in game_mapping.values(), f"Invalid game ID {selected_idx}"
 
-                candidates = [k for k,v in game_mapping.items() if v == selected_idx]
+                candidates = [k for k, v in game_mapping.items() if v == selected_idx]
                 assert len(candidates) == 1, f"Multiple games found for ID {selected_idx}: {candidates}"
 
                 selected_game = candidates[0]
+                print(f"Selected game: {selected_game} (id {selected_idx})")
         else:
             selected_game = None
             print("No game mapping available, proceeding without game conditioning")

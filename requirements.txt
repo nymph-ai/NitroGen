@@ -1,0 +1,13 @@
+numpy
+pyzmq
+torch
+pyyaml
+einops
+transformers==4.38.2
+pydantic
+diffusers
+polars
+pillow
+opencv-python
+gymnasium
+av
