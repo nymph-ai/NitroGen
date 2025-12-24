@@ -23,6 +23,7 @@ parser.add_argument("--port", type=int, default=5555, help="Port for model serve
 parser.add_argument("--image-topic", type=str, default="/player/image_raw", help="ROS2 image topic")
 parser.add_argument("--joy-topic", type=str, default="/joy", help="ROS2 joy topic")
 parser.add_argument("--trigger-mode", type=str, default="0_1", help="Trigger axis mode: 0_1 or neg1_1")
+parser.add_argument("--debug-output", action="store_true", help="Write debug frames/videos/actions to disk")
 
 args = parser.parse_args()
 
@@ -34,11 +35,16 @@ action_downsample_ratio = policy_info["action_downsample_ratio"]
 CKPT_NAME = Path(policy_info["ckpt_path"]).stem
 NO_MENU = not args.allow_menu
 
-PATH_DEBUG = PATH_REPO / "debug"
-PATH_DEBUG.mkdir(parents=True, exist_ok=True)
+DEBUG_OUTPUT = args.debug_output
+PATH_DEBUG = None
+PATH_OUT = None
 
-PATH_OUT = (PATH_REPO / "out" / CKPT_NAME).resolve()
-PATH_OUT.mkdir(parents=True, exist_ok=True)
+if DEBUG_OUTPUT:
+    PATH_DEBUG = PATH_REPO / "debug"
+    PATH_DEBUG.mkdir(parents=True, exist_ok=True)
+
+    PATH_OUT = (PATH_REPO / "out" / CKPT_NAME).resolve()
+    PATH_OUT.mkdir(parents=True, exist_ok=True)
 
 BUTTON_PRESS_THRES = 0.5
 STICK_DEADZONE = 0.15
@@ -46,17 +52,31 @@ STICK_EXPO = 0.3
 
 # Find in path_out the list of existing video files, named 0001.mp4, 0002.mp4, etc.
 # If they exist, find the max number and set the next number to be max + 1
-video_files = sorted(PATH_OUT.glob("*_DEBUG.mp4"))
-if video_files:
-    existing_numbers = [f.name.split("_")[0] for f in video_files]
-    existing_numbers = [int(n) for n in existing_numbers if n.isdigit()]
-    next_number = max(existing_numbers) + 1
-else:
-    next_number = 1
+PATH_MP4_DEBUG = None
+PATH_MP4_CLEAN = None
+PATH_ACTIONS = None
+if DEBUG_OUTPUT:
+    video_files = sorted(PATH_OUT.glob("*_DEBUG.mp4"))
+    if video_files:
+        existing_numbers = [f.name.split("_")[0] for f in video_files]
+        existing_numbers = [int(n) for n in existing_numbers if n.isdigit()]
+        next_number = max(existing_numbers) + 1
+    else:
+        next_number = 1
 
-PATH_MP4_DEBUG = PATH_OUT / f"{next_number:04d}_DEBUG.mp4"
-PATH_MP4_CLEAN = PATH_OUT / f"{next_number:04d}_CLEAN.mp4"
-PATH_ACTIONS = PATH_OUT / f"{next_number:04d}_ACTIONS.json"
+    PATH_MP4_DEBUG = PATH_OUT / f"{next_number:04d}_DEBUG.mp4"
+    PATH_MP4_CLEAN = PATH_OUT / f"{next_number:04d}_CLEAN.mp4"
+    PATH_ACTIONS = PATH_OUT / f"{next_number:04d}_ACTIONS.json"
+
+class NullRecorder:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def add_frame(self, _frame):
+        return None
 
 def preprocess_img(main_image):
     main_cv = cv2.cvtColor(np.array(main_image), cv2.COLOR_RGB2BGR)
@@ -133,12 +153,24 @@ obs, reward, terminated, truncated, info = env.step(action=zero_action)
 frames = None
 step_count = 0
 
-with VideoRecorder(str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium") as debug_recorder:
-    with VideoRecorder(str(PATH_MP4_CLEAN), fps=60, crf=28, preset="medium") as clean_recorder:
+debug_recorder_ctx = (
+    VideoRecorder(str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium")
+    if DEBUG_OUTPUT
+    else NullRecorder()
+)
+clean_recorder_ctx = (
+    VideoRecorder(str(PATH_MP4_CLEAN), fps=60, crf=28, preset="medium")
+    if DEBUG_OUTPUT
+    else NullRecorder()
+)
+
+with debug_recorder_ctx as debug_recorder:
+    with clean_recorder_ctx as clean_recorder:
         try:
             while True:
                 obs = preprocess_img(obs)
-                obs.save(PATH_DEBUG / f"{step_count:05d}.png")
+                if DEBUG_OUTPUT:
+                    obs.save(PATH_DEBUG / f"{step_count:05d}.png")
 
                 pred = policy.predict(obs)
 
@@ -203,16 +235,17 @@ with VideoRecorder(str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium") as debu
                         clean_recorder.add_frame(clean_viz)
 
                 # Append env_actions dictionnary to JSONL file
-                with open(PATH_ACTIONS, "a") as f:
-                    for i, a in enumerate(env_actions):
-                        # convert numpy arrays to lists for JSON serialization
-                        for k, v in a.items():
-                            if isinstance(v, np.ndarray):
-                                a[k] = v.tolist()
-                        a["step"] = step_count
-                        a["substep"] = i
-                        json.dump(a, f)
-                        f.write("\n")
+                if DEBUG_OUTPUT:
+                    with open(PATH_ACTIONS, "a") as f:
+                        for i, a in enumerate(env_actions):
+                            # convert numpy arrays to lists for JSON serialization
+                            for k, v in a.items():
+                                if isinstance(v, np.ndarray):
+                                    a[k] = v.tolist()
+                            a["step"] = step_count
+                            a["substep"] = i
+                            json.dump(a, f)
+                            f.write("\n")
 
 
                 step_count += 1
