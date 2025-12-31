@@ -1,6 +1,8 @@
-import zmq
 import argparse
+import os
 import pickle
+import time
+import zmq
 
 from nitrogen.inference_session import InferenceSession
 
@@ -13,7 +15,16 @@ if __name__ == "__main__":
     parser.add_argument("--ctx", type=int, default=1, help="Context length")
     args = parser.parse_args()
 
-    session = InferenceSession.from_ckpt(args.ckpt, old_layout=args.old_layout, cfg_scale=args.cfg, context_length=args.ctx)
+    while not os.path.exists(args.ckpt):
+        print(f"Checkpoint not found at {args.ckpt}. Waiting...")
+        time.sleep(5)
+
+    session = InferenceSession.from_ckpt(
+        args.ckpt,
+        old_layout=args.old_layout,
+        cfg_scale=args.cfg,
+        context_length=args.ctx,
+    )
 
     # Setup ZeroMQ
     context = zmq.Context()
