@@ -5,7 +5,7 @@
     <a href="https://nitrogen.minedojo.org/"><strong>Website</strong></a> | 
     <a href="https://huggingface.co/nvidia/NitroGen"><strong>Model</strong></a> |
     <a href="https://huggingface.co/datasets/nvidia/NitroGen"><strong>Dataset</strong></a> |
-    <a href="https://nitrogen.minedojo.org/assets/documents/nitrogen.pdf"><strong>Paper</strong></a>
+    <a href="https://arxiv.org/abs/2601.02427"><strong>Paper</strong></a>
   </p>
 </div>
 
@@ -55,11 +55,14 @@ The `--process` parameter must be the exact executable name of the game you want
 If you find our work useful, please consider citing us!
 
 ```bibtex
-@misc{Magne2025NitroGen,
-  title        = {NitroGen: An Open Foundation Model for Generalist Gaming Agents},
-  author       = {Magne, Lo{\"\i}c and Awadalla, Anas and Wang, Guanzhi and Xu, Yinzhen and Belofsky, Joshua and Hu, Fengyuan and Kim, Joohwan and Schmidt, Ludwig and Gkioxari, Georgia and Kautz, Jan and Yue, Yisong and Choi, Yejin and Zhu, Yuke and Fan, Linxi},
-  year         = {2025},
-  howpublished = {\url{https://nitrogen.minedojo.org/}},
+@misc{magne2026nitrogen,
+      title={NitroGen: An Open Foundation Model for Generalist Gaming Agents}, 
+      author={Loïc Magne and Anas Awadalla and Guanzhi Wang and Yinzhen Xu and Joshua Belofsky and Fengyuan Hu and Joohwan Kim and Ludwig Schmidt and Georgia Gkioxari and Jan Kautz and Yisong Yue and Yejin Choi and Yuke Zhu and Linxi "Jim" Fan},
+      year={2026},
+      eprint={2601.02427},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2601.02427}, 
 }
 ```
 
