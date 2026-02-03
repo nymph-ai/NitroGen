@@ -10,7 +10,7 @@ RUN apt-get update && \
 
 COPY requirements.txt /app/requirements.txt
 
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed -r /app/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages --root-user-action=ignore --ignore-installed -r /app/requirements.txt
 
 COPY . /app
 
